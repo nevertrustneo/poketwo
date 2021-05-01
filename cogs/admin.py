@@ -19,49 +19,27 @@ class Administration(commands.Cog):
     async def admin(self, ctx):
         pass
 
-    @commands.is_owner()
-    @admin.command(aliases=("bl",))
-    async def blacklist(self, ctx, users: commands.Greedy[FetchUserConverter]):
-        """Blacklist one or more users."""
-
-        await self.bot.mongo.db.blacklist.insert_many(
-            [{"_id": x.id} for x in users], ordered=False
-        )
-        users_msg = ", ".join(f"**{x}**" for x in users)
-        await ctx.send(f"Blacklisted {users_msg}.")
-
-    @commands.is_owner()
-    @admin.command(aliases=("ubl",))
-    async def unblacklist(self, ctx, users: commands.Greedy[FetchUserConverter]):
-        """Blacklist one or more users."""
-
-        await self.bot.mongo.db.blacklist.delete_many(
-            {"_id": {"$in": [x.id for x in users]}},
-        )
-        users_msg = ", ".join(f"**{x}**" for x in users)
-        await ctx.send(f"Unblacklisted {users_msg}.")
-
-    @commands.is_owner()
+    @commands.check_any(commands.is_owner(), commands.has_role(718006431231508481))
     @admin.command(aliases=("sp",))
-    async def suspend(self, ctx, users: commands.Greedy[FetchUserConverter]):
+    async def suspend(self, ctx, users: commands.Greedy[FetchUserConverter], *, reason: str = None):
         """Suspend one or more users."""
 
         await self.bot.mongo.db.member.update_many(
             {"_id": {"$in": [x.id for x in users]}},
-            {"$set": {"suspended": True}},
+            {"$set": {"suspended": True, "suspension_reason": reason}},
         )
         await self.bot.redis.hdel("db:member", *[int(x.id) for x in users])
         users_msg = ", ".join(f"**{x}**" for x in users)
         await ctx.send(f"Suspended {users_msg}.")
 
-    @commands.is_owner()
+    @commands.check_any(commands.is_owner(), commands.has_role(718006431231508481))
     @admin.command(aliases=("usp",))
     async def unsuspend(self, ctx, users: commands.Greedy[FetchUserConverter]):
         """Unuspend one or more users."""
 
         await self.bot.mongo.db.member.update_many(
             {"_id": {"$in": [x.id for x in users]}},
-            {"$set": {"suspended": False}},
+            {"$unset": {"suspended": 1, "suspension_reason": 1}},
         )
         await self.bot.redis.hdel("db:member", *[int(x.id) for x in users])
         users_msg = ", ".join(f"**{x}**" for x in users)

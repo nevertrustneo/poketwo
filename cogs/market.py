@@ -23,7 +23,6 @@ class Market(commands.Cog):
         await ctx.send_help(ctx.command)
 
     # Filter
-    @flags.add_flag("page", nargs="?", type=int, default=1)
     @flags.add_flag("--shiny", action="store_true")
     @flags.add_flag("--alolan", action="store_true")
     @flags.add_flag("--mythical", action="store_true")
@@ -31,6 +30,7 @@ class Market(commands.Cog):
     @flags.add_flag("--ub", action="store_true")
     @flags.add_flag("--event", action="store_true")
     @flags.add_flag("--mega", action="store_true")
+    @flags.add_flag("--embedcolor", "--ec", action="store_true")
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
 
@@ -45,12 +45,10 @@ class Market(commands.Cog):
     @flags.add_flag("--iv", nargs="+", action="append")
 
     # Duplicate IV's
-    @flags.add_flag("--triple", "--three", nargs="?")
-    @flags.add_flag("--quadruple", "--four", "--quadra", "--quad", "--tetra", nargs="?")
-    @flags.add_flag(
-        "--pentuple", "--quintuple", "--penta", "--pent", "--five", nargs="?"
-    )
-    @flags.add_flag("--hextuple", "--sextuple", "--hexa", "--hex", "--six", nargs="?")
+    @flags.add_flag("--triple", "--three", type=int)
+    @flags.add_flag("--quadruple", "--four", "--quadra", "--quad", "--tetra", type=int)
+    @flags.add_flag("--pentuple", "--quintuple", "--penta", "--pent", "--five", type=int)
+    @flags.add_flag("--hextuple", "--sextuple", "--hexa", "--hex", "--six", type=int)
 
     # Skip/limit
     @flags.add_flag("--skip", type=int)
@@ -64,12 +62,10 @@ class Market(commands.Cog):
     )
     @flags.add_flag("--mine", "--listings", action="store_true")
     @checks.has_started()
+    @commands.cooldown(1, 5, commands.BucketType.user)
     @market.command(aliases=("s",), cls=flags.FlagCommand)
     async def search(self, ctx, **flags):
         """Search pokémon from the marketplace."""
-
-        if flags["page"] < 1:
-            return await ctx.send("Page must be positive!")
 
         aggregations = await self.bot.get_cog("Pokemon").create_filter(
             flags, ctx, order_by=flags["order"]
@@ -102,7 +98,6 @@ class Market(commands.Cog):
             allow_last=False,
             allow_go=False,
         )
-        pages.current_page = flags["page"] - 1
         self.bot.menus[ctx.author.id] = pages
 
         try:
@@ -131,9 +126,7 @@ class Market(commands.Cog):
         member = await self.bot.mongo.fetch_member_info(ctx.author)
 
         if member.selected_id == pokemon.id:
-            return await ctx.send(
-                f"{pokemon.idx}: You can't list your selected pokémon!"
-            )
+            return await ctx.send(f"{pokemon.idx}: You can't list your selected pokémon!")
 
         if pokemon.favorite:
             return await ctx.send(f"{pokemon.idx}: You can't list a favorited pokémon!")
@@ -305,9 +298,7 @@ class Market(commands.Cog):
             return await ctx.send("Couldn't buy that pokémon.")
 
         await self.bot.mongo.db.listing.delete_one({"_id": id})
-        await self.bot.mongo.update_member(
-            ctx.author, {"$inc": {"balance": -listing["price"]}}
-        )
+        await self.bot.mongo.update_member(ctx.author, {"$inc": {"balance": -listing["price"]}})
 
         await self.bot.mongo.update_member(
             listing["user_id"], {"$inc": {"balance": listing["price"]}}
@@ -338,6 +329,7 @@ class Market(commands.Cog):
             print("Error trading market logs.")
 
     @checks.has_started()
+    @commands.cooldown(3, 5, commands.BucketType.user)
     @market.command(aliases=("i",))
     async def info(self, ctx, id: int):
         """View a pokémon from the market."""
@@ -352,7 +344,7 @@ class Market(commands.Cog):
 
         pokemon = self.bot.mongo.EmbeddedPokemon.build_from_mongo(listing["pokemon"])
 
-        embed = self.bot.Embed(color=0x9CCFFF)
+        embed = self.bot.Embed(color=0xFE9AC9)
         embed.title = f"{pokemon:ln}"
 
         if pokemon.shiny:
@@ -387,6 +379,12 @@ class Market(commands.Cog):
             if item.emote is not None:
                 emote = getattr(self.bot.sprites, item.emote) + " "
             embed.add_field(name="Held Item", value=f"{emote}{item.name}", inline=False)
+
+        embed.add_field(
+            name="Market Listing",
+            value=f"**ID:** {id}\n**Price:** {listing['price']:,} pc",
+            inline=False,
+        )
 
         embed.set_footer(text=f"Displaying listing {id} from market.")
 

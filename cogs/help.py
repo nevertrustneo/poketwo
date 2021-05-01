@@ -16,23 +16,17 @@ class CustomHelpCommand(commands.HelpCommand):
         if isinstance(error, commands.CommandInvokeError):
             await ctx.send(str(error.original))
 
-    def make_page_embed(
-        self, commands, title="Pokétwo Help", description=discord.Embed.Empty
-    ):
-        embed = self.context.bot.Embed(color=0x9CCFFF)
+    def make_page_embed(self, commands, title="Pokétwo Help", description=discord.Embed.Empty):
+        embed = self.context.bot.Embed(color=0xFE9AC9)
         embed.title = title
         embed.description = description
-        embed.set_footer(
-            text=f'Use "{self.clean_prefix}help command" for more info on a command.'
-        )
+        embed.set_footer(text=f'Use "{self.clean_prefix}help command" for more info on a command.')
 
         for command in commands:
             signature = self.clean_prefix + command.qualified_name + " "
 
             signature += (
-                "[args...]"
-                if isinstance(command, flags.FlagCommand)
-                else command.signature
+                "[args...]" if isinstance(command, flags.FlagCommand) else command.signature
             )
 
             embed.add_field(
@@ -43,10 +37,8 @@ class CustomHelpCommand(commands.HelpCommand):
 
         return embed
 
-    def make_default_embed(
-        self, cogs, title="Pokétwo Categories", description=discord.Embed.Empty
-    ):
-        embed = self.context.bot.Embed(color=0x9CCFFF)
+    def make_default_embed(self, cogs, title="Pokétwo Categories", description=discord.Embed.Empty):
+        embed = self.context.bot.Embed(color=0xFE9AC9)
         embed.title = title
         embed.description = description
 
@@ -90,9 +82,7 @@ class CustomHelpCommand(commands.HelpCommand):
 
         async def get_page(source, menu, pidx):
             cogs = embed_pages[
-                min(len(embed_pages) - 1, pidx * 6) : min(
-                    len(embed_pages) - 1, pidx * 6 + 6
-                )
+                min(len(embed_pages) - 1, pidx * 6) : min(len(embed_pages) - 1, pidx * 6 + 6)
             ]
 
             embed = self.make_default_embed(
@@ -149,7 +139,7 @@ class CustomHelpCommand(commands.HelpCommand):
         await ctx.send(embed=embed)
 
     async def send_command_help(self, command):
-        embed = self.context.bot.Embed(color=0x9CCFFF)
+        embed = self.context.bot.Embed(color=0xFE9AC9)
         embed.title = self.clean_prefix + command.qualified_name
 
         if command.description:

@@ -1,15 +1,15 @@
+import pickle
 import random
 import sys
 import traceback
 from datetime import datetime, timedelta
+from typing import Counter
 
 import aiohttp
 import discord
 from discord.channel import TextChannel
 from discord.ext import commands, flags, tasks
-
 from helpers import checks, constants, converters
-
 
 GENERAL_CHANNEL_NAMES = {"welcome", "general", "lounge", "chat", "talk", "main"}
 
@@ -29,8 +29,9 @@ class Bot(commands.Cog):
 
         self.post_count.start()
         self.update_status.start()
+        self.process_dms.start()
 
-        if self.bot.cluster_idx == 0:
+        if self.bot.cluster_idx == 0 and self.bot.config.DBL_TOKEN is not None:
             self.post_dbl.start()
             self.remind_votes.start()
 
@@ -40,18 +41,26 @@ class Bot(commands.Cog):
         if ctx.invoked_with.lower() == "help":
             return True
 
-        if (
-            await self.bot.mongo.db.blacklist.count_documents({"_id": ctx.author.id})
-            > 0
-        ):
-            raise Blacklisted
-
         bucket = self.cd.get_bucket(ctx.message)
-        retry_after = bucket.update_rate_limit()
-        if retry_after:
+        if retry_after := bucket.update_rate_limit():
             raise commands.CommandOnCooldown(bucket, retry_after)
 
         return True
+
+    async def send_dm(self, uid, content):
+        priv = await self.bot.http.start_private_message(uid)
+        await self.bot.http.send_message(priv["id"], content)
+
+    @tasks.loop(seconds=0.5)
+    async def process_dms(self):
+        with await self.bot.redis as r:
+            req = await r.blpop("send_dm")
+            uid, content = pickle.loads(req[1])
+            self.bot.loop.create_task(self.send_dm(uid, content))
+
+    @process_dms.before_loop
+    async def before_process_dms(self):
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
@@ -90,9 +99,7 @@ class Bot(commands.Cog):
             fmt = "\n".join(missing)
             message = f"💥 Err, I need the following permissions to run this command:\n{fmt}\nPlease fix this and try again."
             botmember = (
-                self.bot.user
-                if ctx.guild is None
-                else ctx.guild.get_member(self.bot.user.id)
+                self.bot.user if ctx.guild is None else ctx.guild.get_member(self.bot.user.id)
             )
             if ctx.channel.permissions_for(botmember).send_messages:
                 await ctx.send(message)
@@ -100,6 +107,12 @@ class Bot(commands.Cog):
             await ctx.send(error.original)
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send_help(ctx.command)
+        elif isinstance(error, checks.Suspended):
+            embed = discord.Embed(color=discord.Color.red())
+            embed.title = "Account Suspended"
+            embed.description = "Your account was found to be in violation of Pokétwo rules and has been permanently blacklisted from using the bot."
+            embed.add_field(name="Reason", value=error.reason or "No reason provided")
+            await ctx.send(embed=embed)
         elif isinstance(
             error,
             (
@@ -113,9 +126,7 @@ class Bot(commands.Cog):
             return
         else:
             print(f"Ignoring exception in command {ctx.command}")
-            traceback.print_exception(
-                type(error), error, error.__traceback__, file=sys.stderr
-            )
+            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
             print("\n\n")
 
     @commands.Cog.listener()
@@ -124,9 +135,7 @@ class Bot(commands.Cog):
             return
         else:
             print(f"Ignoring exception in command {ctx.command}:")
-            traceback.print_exception(
-                type(error), error, error.__traceback__, file=sys.stderr
-            )
+            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
             print("\n\n")
 
     def sendable_channel(self, channel):
@@ -150,15 +159,14 @@ class Bot(commands.Cog):
             channel = next(
                 x
                 for x in channels
-                if isinstance(x, TextChannel)
-                and guild.me.permissions_in(x).send_messages
+                if isinstance(x, TextChannel) and guild.me.permissions_in(x).send_messages
             )
         except StopIteration:
             return
         prefix = await self.determine_prefix(guild)
         prefix = prefix[0]
 
-        embed = discord.Embed(color=0x9CCFFF)
+        embed = discord.Embed(color=0xFE9AC9)
         embed.title = "Thanks for adding me to your server! \N{WAVING HAND SIGN}"
         embed.description = f"To get started, do `{prefix}start` to pick your starter pokémon. As server members talk, wild pokémon will automatically spawn in the server, and you'll be able to catch them with `{prefix}catch <pokémon>`! For a full command list, do `{prefix}help`."
         embed.add_field(
@@ -205,15 +213,11 @@ class Bot(commands.Cog):
     async def invite(self, ctx):
         """View the invite link for the bot."""
 
-        embed = self.bot.Embed(color=0x9CCFFF)
+        embed = self.bot.Embed(color=0xFE9AC9)
         embed.title = "Want to add me to your server? Use the link below!"
         embed.set_thumbnail(url=self.bot.user.avatar_url)
-        embed.add_field(
-            name="Invite Bot", value="https://invite.poketwo.net/", inline=False
-        )
-        embed.add_field(
-            name="Join Server", value="https://discord.gg/poketwo", inline=False
-        )
+        embed.add_field(name="Invite Bot", value="https://invite.poketwo.net/", inline=False)
+        embed.add_field(name="Join Server", value="https://discord.gg/poketwo", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -262,9 +266,7 @@ class Bot(commands.Cog):
         headers = {"Authorization": self.bot.config.DBL_TOKEN}
         data = {"server_count": result["servers"], "shard_count": result["shards"]}
         async with aiohttp.ClientSession(headers=headers) as sess:
-            await sess.post(
-                f"https://top.gg/api/bots/{self.bot.user.id}/stats", data=data
-            )
+            await sess.post(f"https://top.gg/api/bots/{self.bot.user.id}/stats", data=data)
 
     @tasks.loop(seconds=15)
     async def remind_votes(self):
@@ -276,9 +278,7 @@ class Bot(commands.Cog):
 
         ids = set()
 
-        async for x in self.bot.mongo.db.member.find(
-            query, {"_id": 1}, no_cursor_timeout=True
-        ):
+        async for x in self.bot.mongo.db.member.find(query, {"_id": 1}, no_cursor_timeout=True):
             try:
                 ids.add(x["_id"])
                 priv = await self.bot.http.start_private_message(x["_id"])
@@ -289,10 +289,9 @@ class Bot(commands.Cog):
             except:
                 pass
 
-        await self.bot.mongo.db.member.update_many(
-            query, {"$set": {"need_vote_reminder": False}}
-        )
-        await self.bot.redis.hdel("db:member", *[int(x) for x in ids])
+        await self.bot.mongo.db.member.update_many(query, {"$set": {"need_vote_reminder": False}})
+        if len(ids) > 0:
+            await self.bot.redis.hdel("db:member", *[int(x) for x in ids])
 
     @tasks.loop(minutes=1)
     async def post_count(self):
@@ -315,7 +314,7 @@ class Bot(commands.Cog):
 
         result = await self.get_stats()
 
-        embed = self.bot.Embed(color=0x9CCFFF)
+        embed = self.bot.Embed(color=0xFE9AC9)
         embed.title = f"Pokétwo Statistics"
         embed.set_thumbnail(url=self.bot.user.avatar_url)
 
@@ -355,7 +354,7 @@ class Bot(commands.Cog):
     async def start(self, ctx):
         """View the starter pokémon."""
 
-        embed = self.bot.Embed(color=0x9CCFFF)
+        embed = self.bot.Embed(color=0xFE9AC9)
         embed.title = "Welcome to the world of Pokémon!"
         embed.description = f"To start, choose one of the starter pokémon using the `{ctx.prefix}pick <pokemon>` command. "
 
@@ -412,7 +411,7 @@ class Bot(commands.Cog):
 
         member = await self.bot.mongo.fetch_member_info(ctx.author)
 
-        embed = self.bot.Embed(color=0x9CCFFF)
+        embed = self.bot.Embed(color=0xFE9AC9)
         embed.title = "Trainer Profile"
         embed.set_author(name=str(ctx.author), icon_url=ctx.author.avatar_url)
 
@@ -440,9 +439,7 @@ class Bot(commands.Cog):
         embed.add_field(name="Pokémon Caught", value="\n".join(pokemon_caught))
         embed.add_field(
             name="Badges",
-            value=self.bot.sprites.pin_halloween
-            if member.halloween_badge
-            else "No badges",
+            value=self.bot.sprites.pin_halloween if member.halloween_badge else "No badges",
         )
 
         await ctx.send(embed=embed)
@@ -451,9 +448,30 @@ class Bot(commands.Cog):
         self.post_count.cancel()
         self.update_status.cancel()
 
-        if self.bot.cluster_idx == 0:
+        if self.bot.cluster_idx == 0 and self.bot.config.DBL_TOKEN is not None:
             self.post_dbl.cancel()
             self.remind_votes.cancel()
+
+    @commands.command()
+    @commands.has_permissions(manage_messages=True)
+    async def cleanup(self, ctx, search=100):
+        """Cleans up the bot's messages from the channel."""
+
+        def check(m):
+            return m.author == ctx.me or m.content.startswith(ctx.prefix)
+
+        await ctx.message.delete()
+        deleted = await ctx.channel.purge(limit=search, check=check, before=ctx.message)
+        spammers = Counter(m.author.display_name for m in deleted)
+        count = len(deleted)
+
+        messages = [f'{count} message{" was" if count == 1 else "s were"} removed.']
+        if len(deleted) > 0:
+            messages.append("")
+            spammers = sorted(spammers.items(), key=lambda t: t[1], reverse=True)
+            messages.extend(f"– **{author}**: {count}" for author, count in spammers)
+
+        await ctx.send("\n".join(messages), delete_after=5)
 
 
 def setup(bot):
