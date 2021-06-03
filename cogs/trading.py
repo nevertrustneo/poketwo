@@ -208,7 +208,7 @@ class Trading(commands.Cog):
                                 evo = random.choice(evos)
 
                                 evo_embed = self.bot.Embed(color=0xFE9AC9)
-                                evo_embed.title = f"Congratulations {mem.display_name}!"
+                                evo_embed.title = f"Congratulations {omem.display_name}!"
 
                                 name = str(pokemon.species)
 
@@ -635,6 +635,7 @@ class Trading(commands.Cog):
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--nickname", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
+    @flags.add_flag("--region", "--r", type=str, action="append")
 
     # IV
     @flags.add_flag("--level", nargs="+", action="append")

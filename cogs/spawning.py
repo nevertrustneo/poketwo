@@ -308,15 +308,24 @@ class Spawning(commands.Cog):
         if not await self.bot.redis.hexists("wild", ctx.channel.id):
             return
 
+        if await self.bot.redis.hexists("captcha", ctx.author.id):
+            return await ctx.send(
+                f"Whoa there. Please tell us you're human! https://verify.poketwo.net/captcha/{ctx.author.id}"
+            )
+
+        count = await self.bot.redis.hincrby(f"catches:{ctx.author.id}", 1)
+        if count == 1:
+            await self.bot.redis.expire(f"catches:{ctx.author.id}", 86400)
+        elif count >= 1000:
+            await self.bot.redis.hset("captcha", ctx.author.id, 1)
+            await self.bot.redis.delete(f"catches:{ctx.author.id}")
+
         species_id = await self.bot.redis.hget("wild", ctx.channel.id)
         species = self.bot.data.species_by_number(int(species_id))
 
         inds = [i for i, x in enumerate(species.name) if x.isalpha()]
         blanks = random.sample(inds, len(inds) // 2)
-        hint = " ".join(
-            "".join(x if i in blanks else "\\_" for i, x in enumerate(x))
-            for x in species.name.split()
-        )
+        hint = "".join("\\_" if i in blanks else x for i, x in enumerate(species.name))
 
         await ctx.send(f"The pokémon is {hint}.")
 
@@ -330,6 +339,18 @@ class Spawning(commands.Cog):
 
         if not await self.bot.redis.hexists("wild", ctx.channel.id):
             return
+
+        if await self.bot.redis.hexists("captcha", ctx.author.id):
+            return await ctx.send(
+                f"Whoa there. Please tell us you're human! https://verify.poketwo.net/captcha/{ctx.author.id}"
+            )
+
+        count = await self.bot.redis.hincrby(f"catches:{ctx.author.id}", 1)
+        if count == 1:
+            await self.bot.redis.expire(f"catches:{ctx.author.id}", 86400)
+        elif count >= 1000:
+            await self.bot.redis.hset("captcha", ctx.author.id, 1)
+            await self.bot.redis.delete(f"catches:{ctx.author.id}")
 
         species_id = await self.bot.redis.hget("wild", ctx.channel.id)
         species = self.bot.data.species_by_number(int(species_id))
@@ -438,7 +459,7 @@ class Spawning(commands.Cog):
 
         await self.bot.redis.delete(f"redeem:{ctx.channel.id}")
 
-        self.bot.dispatch("catch", ctx.author, species)
+        self.bot.dispatch("catch", ctx, species)
         await ctx.send(message)
 
     @checks.has_started()
@@ -468,10 +489,15 @@ class Spawning(commands.Cog):
         species = self.bot.data.species_by_name(species)
 
         if species is None:
-            return await ctx.send(f"Could not find a pokemon matching `{species}`.")
+            return await ctx.send(f"Could not find a pokémon matching `{species}`.")
 
         if not species.catchable:
             return await ctx.send("This pokémon can't be caught in the wild!")
+
+        if species.id == member.shiny_hunt:
+            return await ctx.send(
+                f"You are already hunting this pokémon with a streak of **{member.shiny_streak}**."
+            )
 
         if member.shiny_streak > 0:
             await ctx.send(

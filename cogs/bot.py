@@ -435,11 +435,14 @@ class Bot(commands.Cog):
                 )
             )
         pokemon_caught.append("**Shiny: **" + str(member.shinies_caught))
-
         embed.add_field(name="Pokémon Caught", value="\n".join(pokemon_caught))
+
+        badges = [k for k, v in member.badges.items() if v]
+        if member.halloween_badge:
+            badges.append("halloween")
         embed.add_field(
             name="Badges",
-            value=self.bot.sprites.pin_halloween if member.halloween_badge else "No badges",
+            value="\n".join(getattr(self.bot.sprites, f"badge_{x}") for x in badges) or "No badges",
         )
 
         await ctx.send(embed=embed)
@@ -460,7 +463,6 @@ class Bot(commands.Cog):
         def check(m):
             return m.author == ctx.me or m.content.startswith(ctx.prefix)
 
-        await ctx.message.delete()
         deleted = await ctx.channel.purge(limit=search, check=check, before=ctx.message)
         spammers = Counter(m.author.display_name for m in deleted)
         count = len(deleted)

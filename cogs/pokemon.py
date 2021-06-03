@@ -107,6 +107,7 @@ class Pokemon(commands.Cog):
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--nickname", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
+    @flags.add_flag("--region", "--r", type=str, action="append")
 
     # IV
     @flags.add_flag("--level", nargs="+", action="append")
@@ -285,6 +286,7 @@ class Pokemon(commands.Cog):
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--nickname", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
+    @flags.add_flag("--region", "--r", type=str, action="append")
 
     # IV
     @flags.add_flag("--level", nargs="+", action="append")
@@ -382,6 +384,7 @@ class Pokemon(commands.Cog):
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--nickname", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
+    @flags.add_flag("--region", "--r", type=str, action="append")
 
     # IV
     @flags.add_flag("--level", nargs="+", action="append")
@@ -625,7 +628,10 @@ class Pokemon(commands.Cog):
 
         if "type" in flags and flags["type"]:
             all_species = [i for x in flags["type"] for i in self.bot.data.list_type(x)]
+            aggregations.append({"$match": {"pokemon.species_id": {"$in": all_species}}})
 
+        if "region" in flags and flags["region"]:
+            all_species = [i for x in flags["region"] for i in self.bot.data.list_region(x)]
             aggregations.append({"$match": {"pokemon.species_id": {"$in": all_species}}})
 
         if "favorite" in flags and flags["favorite"]:
@@ -810,6 +816,7 @@ class Pokemon(commands.Cog):
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--nickname", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
+    @flags.add_flag("--region", "--r", type=str, action="append")
 
     # IV
     @flags.add_flag("--level", nargs="+", action="append")
@@ -919,6 +926,7 @@ class Pokemon(commands.Cog):
     @flags.add_flag("--name", "--n", nargs="+", action="append")
     @flags.add_flag("--nickname", nargs="+", action="append")
     @flags.add_flag("--type", "--t", type=str, action="append")
+    @flags.add_flag("--region", "--r", type=str, action="append")
 
     # IV
     @flags.add_flag("--level", nargs="+", action="append")
@@ -997,6 +1005,7 @@ class Pokemon(commands.Cog):
     @flags.add_flag("--ordera", action="store_true")
     @flags.add_flag("--ub", action="store_true")
     @flags.add_flag("--type", "--t", type=str)
+    @flags.add_flag("--region", "--r", type=str)
     @checks.has_started()
     @flags.command(aliases=("d", "dex"))
     async def pokedex(self, ctx, **flags):
@@ -1019,7 +1028,7 @@ class Pokemon(commands.Cog):
         if search_or_page.isdigit():
             pgstart = (int(search_or_page) - 1) * 20
 
-            if pgstart >= 809 or pgstart < 0:
+            if pgstart >= 898 or pgstart < 0:
                 return await ctx.send("There are no pokémon on this page.")
 
             num = await self.bot.mongo.fetch_pokedex_count(ctx.author)
@@ -1028,15 +1037,15 @@ class Pokemon(commands.Cog):
                 ctx.guild is None or ctx.guild.me.permissions_in(ctx.channel).external_emojis
             )
 
-            member = await self.bot.mongo.fetch_pokedex(ctx.author, 0, 810)
+            member = await self.bot.mongo.fetch_pokedex(ctx.author, 0, 898 + 1)
             pokedex = member.pokedex
 
             if not flags["uncaught"] and not flags["caught"]:
-                for i in range(1, 810):
+                for i in range(1, 898 + 1):
                     if str(i) not in pokedex:
                         pokedex[str(i)] = 0
             elif flags["uncaught"]:
-                for i in range(1, 810):
+                for i in range(1, 898 + 1):
                     if str(i) not in pokedex:
                         pokedex[str(i)] = 0
                     else:
@@ -1049,8 +1058,9 @@ class Pokemon(commands.Cog):
                     return False
                 if flags["ub"] and key not in self.bot.data.list_ub:
                     return False
-
                 if flags["type"] and key not in self.bot.data.list_type(flags["type"]):
+                    return False
+                if flags["region"] and key not in self.bot.data.list_region(flags["region"]):
                     return False
 
                 return True
@@ -1072,13 +1082,9 @@ class Pokemon(commands.Cog):
 
                 embed = self.bot.Embed(color=0xFE9AC9)
                 embed.title = f"Your pokédex"
-                embed.description = f"You've caught {num} out of 809 pokémon!"
+                embed.description = f"You've caught {num} out of 898 pokémon!"
 
                 embed.set_footer(text=f"Showing {pgstart + 1}–{pgend} out of {len(pokedex)}.")
-
-                # embed.description = (
-                #     f"You've caught {len(member.pokedex)} out of 809 pokémon!"
-                # )
 
                 for k, v in pokedex[pgstart:pgend]:
                     species = self.bot.data.species_by_number(k)
@@ -1101,13 +1107,13 @@ class Pokemon(commands.Cog):
 
                     embed.add_field(name=f"{emoji}{species.name} #{species.id}", value=text)
 
-                if pgend != 809:
+                if pgend != 898:
                     embed.add_field(name="‎", value="‎")
 
                 return embed
 
             pages = pagination.ContinuablePages(
-                pagination.FunctionPageSource(math.ceil(809 / 20), get_page)
+                pagination.FunctionPageSource(math.ceil(898 / 20), get_page)
             )
             pages.current_page = int(search_or_page) - 1
             self.bot.menus[ctx.author.id] = pages
@@ -1177,17 +1183,14 @@ class Pokemon(commands.Cog):
                 f"**Speed:** {species.base_stats.spd}",
             )
 
-            embed.add_field(
-                name="Names",
-                value="\n".join(f"{x} {y}" for x, y in species.names),
-                inline=False,
-            )
             embed.add_field(name="Base Stats", value="\n".join(base_stats))
+            embed.add_field(name="Names", value="\n".join(f"{x} {y}" for x, y in species.names))
             embed.add_field(
-                name="Appearance",
-                value=f"Height: {species.height} m\nWeight: {species.weight} kg",
+                name="Appearance", value=f"Height: {species.height} m\nWeight: {species.weight} kg"
             )
             embed.add_field(name="Types", value="\n".join(species.types))
+            embed.add_field(name="Region", value=species.region.title())
+            embed.add_field(name="Catchable", value="Yes" if species.catchable else "No")
 
             text = "You haven't caught this pokémon yet!"
             if str(species.dex_number) in member.pokedex:
